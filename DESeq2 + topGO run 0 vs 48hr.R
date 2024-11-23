@@ -125,7 +125,8 @@ dim(res_filtered) # look at how many rows you filtered out!
 
 # Pull genes with more than 2x higher/lower expression
 res_filtered_final <- res_filtered %>%
-  filter(log2FoldChange <= -1 | log2FoldChange >= 1)
+  filter(log2FoldChange <= -1 | log2FoldChange >= 1) %>%
+rownames_to_column("gene_id")
 # the '|' stand for OR here!
 head(res_filtered_final)
 dim(res_filtered_final)
