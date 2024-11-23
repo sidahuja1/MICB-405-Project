@@ -1,8 +1,11 @@
 #Modified from From Lec 6-2
 
 # Load libraries for data manipulation
-library(tidyverse)
-library(DESeq2)
+suppressPackageStartupMessages(library(BiocManager))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(RColorBrewer))
 
 # Read files into data frames
 # Control replicate 1
@@ -37,7 +40,7 @@ sac_pombe_48h_rep3 <- read_tsv("48_rep3ReadsPerGene.out.tab",
 # Build a new data frame with gene names and read counts
 # If you are using all stranded data, pick the appropriate column
 # If using non-stranded data, use total column
-sac_readcounts_0vs48 <- data.frame(row.names = sac_pombe_0h_rep1$gene_id,
+sac_readcounts <- data.frame(row.names = sac_pombe_0h_rep1$gene_id,
                               sac_pombe_0h_rep1 = sac_pombe_0h_rep1$sense,
                               sac_pombe_0h_rep2 = sac_pombe_0h_rep2$sense,
                               sac_pombe_0h_rep3 = sac_pombe_0h_rep3$sense,
@@ -46,23 +49,23 @@ sac_readcounts_0vs48 <- data.frame(row.names = sac_pombe_0h_rep1$gene_id,
                               sac_pombe_48h_rep3 = sac_pombe_48h_rep3$sense)
 
 # Clean the row names of an existing DESeq2 count data frame
-rownames(sac_readcounts_0vs48) <- gsub("^.*_", "", rownames(sac_readcounts_0vs48))
+rownames(sac_readcounts) <- gsub("^.*_", "", rownames(sac_readcounts))
 
 # Let's check their order
-colnames(sac_readcounts_0vs48)
+colnames(sac_readcounts)
 
 # DESeq2 also requires the read counts to be in matrices, not data frames
 # We can convert with as.matrix()
-sac_matrix_0vs48 <- as.matrix(sac_readcounts_0vs48)
+sac_matrix <- as.matrix(sac_readcounts)
 
 # DESeq2 also requires a table that provides information about the columns
 # These must be in the order in which they appear on the count matrix
-colnames(sac_readcounts_0vs48)
+colnames(sac_readcounts)
 
 # Confusingly, column data is presented as a data frame The names of each sample
 # should be the row name, and be identical and in order of appearance in the
 # read counts matrix
-columns_data_0vs48 <- data.frame(timepoint = c("0_hour",
+columns_data <- data.frame(timepoint = c("0_hour",
                                          "0_hour",
                                          "0_hour",
                                          "48_hour",
@@ -76,17 +79,17 @@ columns_data_0vs48 <- data.frame(timepoint = c("0_hour",
                                          "sac_pombe_48h_rep3"))
 
 # Create our DESeq2 object
-dds_matrix_0vs48 <- DESeqDataSetFromMatrix(countData = sac_matrix_0vs48, #matrix 
-                                     colData = columns_data_0vs48, #metadata file
+dds_matrix <- DESeqDataSetFromMatrix(countData = sac_matrix, #matrix 
+                                     colData = columns_data, #metadata file
                                      design = ~timepoint)
 # Lets look at the object we created
-dds_matrix_0vs48
+dds_matrix
 
 # Set control condition using the relevel function
-dds_matrix_0vs48$timepoint <- relevel(dds_matrix_0vs48$timepoint, ref = "0_hour")
+dds_matrix$timepoint <- relevel(dds_matrix$timepoint, ref = "0_hour")
 
 # Run DESeq2
-dds <- DESeq(dds_matrix_0vs48)
+dds <- DESeq(dds_matrix)
 
 # These subsequent analyses are covered in Tutorial 7
 
@@ -126,7 +129,8 @@ dim(res_filtered) # look at how many rows you filtered out!
 # Pull genes with more than 2x higher/lower expression
 res_filtered_final <- res_filtered %>%
   filter(log2FoldChange <= -1 | log2FoldChange >= 1) %>%
-rownames_to_column("gene_id")
+  rownames_to_column("gene_id")
+
 # the '|' stand for OR here!
 head(res_filtered_final)
 dim(res_filtered_final)
