@@ -1,0 +1,820 @@
+```{r}
+# Load necessary libraries for data manipulation and DESeq2
+suppressPackageStartupMessages(library(BiocManager))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(DESeq2))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(topGO))
+```
+
+```{r}
+# All files with matching pattern into a list "files"
+reads_per_gene_files <- list.files(pattern = "\\d{1,3}hr_R\\d+ReadsPerGene.out.tab$")
+
+# Loop through the files to read and rename
+data_list <- list() # Create an empty list to store data
+
+for (file in reads_per_gene_files) {
+  # Extract time point and replicate
+  time_point <- sub("^(\\d{1,3})hr_.*", "\\1", file) # Extract time point (e.g., "36")
+  replicate <- sub("^.*R(\\d+).*", "\\1", file)      # Extract replicate number (e.g., "3")
+  
+  # Create the new variable name
+  var_name <- paste0("sac_pombe_", time_point, "h_rep", replicate)
+  
+  # Read the file with appropriate column names and skip the first 4 lines
+  data <- read_tsv(file,
+                   col_names = c("gene_id", "total", "antisense", "sense"),
+                   skip = 4)
+  
+  # Assign the data to the variable name in the global environment
+  assign(var_name, data)
+  
+  # Optionally, store in a list for further processing
+  data_list[[var_name]] <- data
+}
+
+# Check the created variables
+ls()
+```
+
+```{r}
+# Build a new data frame with gene names and read counts
+# If you are using all stranded data, pick the appropriate column
+# If using non-stranded data, use total column
+sac_readcounts <- data.frame(row.names = sac_pombe_0h_rep1$gene_id,
+                              sac_pombe_0h_rep1 = sac_pombe_0h_rep1$sense,
+                              sac_pombe_0h_rep2 = sac_pombe_0h_rep2$sense,
+                              sac_pombe_0h_rep3 = sac_pombe_0h_rep3$sense,
+                              sac_pombe_12h_rep1 = sac_pombe_12h_rep1$sense,
+                              sac_pombe_12h_rep2 = sac_pombe_12h_rep2$sense,
+                              sac_pombe_12h_rep3 = sac_pombe_12h_rep3$sense,
+                              sac_pombe_24h_rep1 = sac_pombe_24h_rep1$sense,
+                              sac_pombe_24h_rep2 = sac_pombe_24h_rep2$sense,
+                              sac_pombe_24h_rep3 = sac_pombe_24h_rep3$sense,
+                              sac_pombe_36h_rep1 = sac_pombe_36h_rep1$sense,
+                              sac_pombe_36h_rep2 = sac_pombe_36h_rep2$sense,
+                              sac_pombe_36h_rep3 = sac_pombe_36h_rep3$sense,
+                              sac_pombe_48h_rep1 = sac_pombe_48h_rep1$sense,
+                              sac_pombe_48h_rep2 = sac_pombe_48h_rep2$sense,
+                              sac_pombe_48h_rep3 = sac_pombe_48h_rep3$sense)
+```
+
+```{r}
+# Transform sac_readcounts -> matrix
+sac_readcounts_matrix <- as.matrix(sac_readcounts)
+
+# Look at first 10 rows of matrix
+head(sac_readcounts_matrix)
+```
+```{r}
+class(sac_readcounts_matrix)
+```
+
+```{r}
+# Assigning "condition" of time to each replicate
+metadata <- data.frame(row.names = colnames(sac_readcounts_matrix),
+                       condition = c ("0h", "0h", "0h", 
+                                      "12h", "12h", "12h", 
+                                      "24h", "24h", "24h", 
+                                      "36h", "36h", "36h", 
+                                      "48h", "48h", "48h")
+                       )
+metadata
+```
+
+```{r}
+colnames(sac_readcounts_matrix) == rownames(metadata)
+```
+
+```{r}
+# Here we are creating the DESeqDataSet object to perform differential expression analysis
+dds_matrix <- DESeqDataSetFromMatrix(countData = sac_readcounts_matrix, # matrix
+                                     colData = metadata, # metadata file
+                                     design = ~condition)
+
+dds_matrix
+```
+
+```{r}
+# Set control condition using relevel
+dds_matrix$condition <- relevel(dds_matrix$condition, ref = "0h")
+
+# Check levels of ddx_matrix$condition
+levels(dds_matrix$condition)
+```
+
+```{r}
+dds <- DESeq(dds_matrix)
+```
+
+```{r}
+saveRDS(dds, "dds.rds")
+```
+
+```{r}
+# Perform log transformation on our count data
+rld <- rlog(dds)
+
+# Generate a PCA plot with DESeq2's plotPCA function
+plotPCA(rld, intgroup = "condition")
+```
+
+```{r}
+# Calculate distances between samples in our log-transformed data
+sample_dists <- dist(t(assay(rld)))
+
+# Convert the output to a matrix
+sample_dist_matrix <- as.matrix(sample_dists)
+
+# Remove the column names of our matrix
+colnames(sample_dist_matrix) <- NULL
+
+# Set the colour palette for our heatmap
+colours <- colorRampPalette(rev(brewer.pal(9, "Blues")))(255)
+
+# Generate a heatmap using the pheatmap package
+pheatmap(sample_dist_matrix,
+         clustering_distance_rows = sample_dists,
+         clustering_distance_cols = sample_dists, 
+         col = colours)
+```
+
+```{r}
+resultsNames(dds)
+```
+
+```{r}
+# Extract results for 0h vs 12h
+res_0h_vs_12h <- results(dds, contrast = c("condition", "12h", "0h")) %>% as.data.frame()
+
+# Extract results for 0h vs 24h
+res_0h_vs_24h <- results(dds, contrast = c("condition", "24h", "0h")) %>% as.data.frame()
+
+# Extract results for 0h vs 36h
+res_0h_vs_36h <- results(dds, contrast = c("condition", "36h", "0h")) %>% as.data.frame()
+
+# Extract results for 0h vs 48h
+res_0h_vs_48h <- results(dds, contrast = c("condition", "48h", "0h")) %>% as.data.frame()
+
+head(res_0h_vs_12h)
+head(res_0h_vs_24h)
+head(res_0h_vs_36h)
+head(res_0h_vs_48h)
+
+```
+
+```{r}
+glimpse(res_0h_vs_12h)
+glimpse(res_0h_vs_24h)
+glimpse(res_0h_vs_36h)
+glimpse(res_0h_vs_48h)
+```
+
+```{r}
+view(res_0h_vs_12h)
+view(res_0h_vs_24h)
+view(res_0h_vs_36h)
+view(res_0h_vs_48h)
+```
+
+```{r}
+# First get rid of NA rows for 12h
+res_0h_vs_12h_no_NA <- res_0h_vs_12h %>% 
+  drop_na()
+
+# How many rows did we filter out!?
+glimpse(res_0h_vs_12h_no_NA)
+
+# Again for 24
+res_0h_vs_24h_no_NA <- res_0h_vs_24h %>% 
+  drop_na()
+
+# How many rows did we filter out!?
+glimpse(res_0h_vs_24h_no_NA) 
+
+# Again for 36
+res_0h_vs_36h_no_NA <- res_0h_vs_36h %>% 
+  drop_na()
+
+# How many rows did we filter out!?
+glimpse(res_0h_vs_36h_no_NA) 
+
+
+# Again for 48
+res_0h_vs_48h_no_NA <- res_0h_vs_48h %>% 
+  drop_na()
+
+# How many rows did we filter out!?
+glimpse(res_0h_vs_48h_no_NA) 
+```
+
+```{r}
+# Use dplr function to keep results with adjusted p-value <= 0.05
+filter_results <- function(res) {
+  res_no_NA <- res %>% drop_na()  # Remove rows with NA values
+  res_filtered <- res_no_NA %>% filter(padj <= 0.05)  # Filter based on padj <= 0.05
+  return(res_filtered)
+}
+
+# Apply the filter to each result set
+res_0h_vs_12h_filtered <- filter_results(res_0h_vs_12h)
+res_0h_vs_24h_filtered <- filter_results(res_0h_vs_24h)
+res_0h_vs_36h_filtered <- filter_results(res_0h_vs_36h)
+res_0h_vs_48h_filtered <- filter_results(res_0h_vs_48h)
+
+# Glimpse at the filtered results
+glimpse(res_0h_vs_12h_filtered)
+glimpse(res_0h_vs_24h_filtered)
+glimpse(res_0h_vs_36h_filtered)
+glimpse(res_0h_vs_48h_filtered)
+```
+
+```{r}
+# Apply additional filtering log2FoldChange <= -1 | log2FoldChange >= 1
+filtered_final_results <- function(res) {
+  res_filtered_final <- res %>%
+    drop_na() %>%  # Remove NA rows
+    filter(padj <= 0.05) %>%  # Apply padj filter
+    filter(log2FoldChange <= -1 | log2FoldChange >= 1) %>%  # Apply log2FoldChange filter
+    rownames_to_column("gene_id")  # Convert rownames to a column
+  
+  return(res_filtered_final)
+}
+
+# Apply the filtered_final function to each result set
+res_0h_vs_12h_filtered_final <- filtered_final_results(res_0h_vs_12h)
+res_0h_vs_24h_filtered_final <- filtered_final_results(res_0h_vs_24h)
+res_0h_vs_36h_filtered_final <- filtered_final_results(res_0h_vs_36h)
+res_0h_vs_48h_filtered_final <- filtered_final_results(res_0h_vs_48h)
+
+# Glimpse at the filtered final results
+glimpse(res_0h_vs_12h_filtered_final)
+glimpse(res_0h_vs_24h_filtered_final)
+glimpse(res_0h_vs_36h_filtered_final)
+glimpse(res_0h_vs_48h_filtered_final)
+```
+
+```{r}
+# Function to get top 10 upregulated genes
+get_top10_upregulated <- function(filtered_res) {
+  top10_upregulated <- filtered_res %>%
+    arrange(desc(log2FoldChange)) %>%  # Arrange by log2FoldChange in descending order
+    head(n = 10)  # Select top 10
+  return(top10_upregulated)
+}
+
+# Apply the function to each filtered result
+top10_upregulated_0h_vs_12h <- get_top10_upregulated(res_0h_vs_12h_filtered_final)
+top10_upregulated_0h_vs_24h <- get_top10_upregulated(res_0h_vs_24h_filtered_final)
+top10_upregulated_0h_vs_36h <- get_top10_upregulated(res_0h_vs_36h_filtered_final)
+top10_upregulated_0h_vs_48h <- get_top10_upregulated(res_0h_vs_48h_filtered_final)
+
+# View the top 10 upregulated genes for each comparison
+top10_upregulated_0h_vs_12h
+top10_upregulated_0h_vs_24h
+top10_upregulated_0h_vs_36h
+top10_upregulated_0h_vs_48h
+```
+
+```{r}
+# Function to get top 10 downregulated genes
+get_top10_downregulated <- function(filtered_res) {
+  top10_genes <- filtered_res %>%
+    arrange(log2FoldChange) %>%  # Arrange by log2FoldChange in ascending order
+    head(n = 10)  # Select top 10
+  return(top10_genes)
+}
+
+# Apply the function to each filtered result
+top10_downregulated_0h_vs_12h <- get_top10_downregulated(res_0h_vs_12h_filtered_final)
+top10_downregulated_0h_vs_24h <- get_top10_downregulated(res_0h_vs_24h_filtered_final)
+top10_downregulated_0h_vs_36h <- get_top10_downregulated(res_0h_vs_36h_filtered_final)
+top10_downregulated_0h_vs_48h <- get_top10_downregulated(res_0h_vs_48h_filtered_final)
+
+# View the top 10 downregulated genes for each comparison
+top10_downregulated_0h_vs_12h
+top10_downregulated_0h_vs_24h
+top10_downregulated_0h_vs_36h
+top10_downregulated_0h_vs_48h
+```
+
+```{r}
+# Save top 10 upregulated genes for each comparison
+write_csv(top10_upregulated_0h_vs_12h, "top10_0h_vs_12h_upregulated.csv")
+write_csv(top10_upregulated_0h_vs_24h, "top10_0h_vs_24h_upregulated.csv")
+write_csv(top10_upregulated_0h_vs_36h, "top10_0h_vs_36h_upregulated.csv")
+write_csv(top10_upregulated_0h_vs_48h, "top10_0h_vs_48h_upregulated.csv")
+
+# Save top 10 downregulated genes for each comparison
+write_csv(top10_downregulated_0h_vs_12h, "top10_0h_vs_12h_downregulated.csv")
+write_csv(top10_downregulated_0h_vs_24h, "top10_0h_vs_24h_downregulated.csv")
+write_csv(top10_downregulated_0h_vs_36h, "top10_0h_vs_36h_downregulated.csv")
+write_csv(top10_downregulated_0h_vs_48h, "top10_0h_vs_48h_downregulated.csv")
+```
+
+```{r}
+# Perform PCA
+rld <- rlog(dds)
+
+# Generate a PCA plot
+pca_plot <- plotPCA(rld, intgroup = "condition")
+
+ggsave("pca_plot.png", plot = pca_plot, width = 6, height = 2, dpi = 800)
+```
+
+```{r}
+# Perform variance stabilizing transformation (VST) or rlog
+vsd <- vst(dds)
+
+# Select top 20 most variable genes (for clarity in heatmap)
+top_genes <- head(order(rowVars(assay(vsd)), decreasing = TRUE), 20)
+
+# Create heatmap of the top 20 genes
+pheatmap(assay(vsd)[top_genes, ], 
+         annotation_col = metadata, 
+         cluster_rows = TRUE, 
+         cluster_cols = TRUE, 
+         show_rownames = TRUE, 
+         show_colnames = TRUE, 
+         scale = "row", 
+         color = colorRampPalette(rev(brewer.pal(9, "Blues")))(255))
+```
+
+```{r}
+# Generate volcano plot for one comparison (e.g., 0h vs 12h)
+ggplot(res_0h_vs_12h_no_NA, aes(x = log2FoldChange, y = -log10(padj))) +
+  geom_point(aes(color = padj < 0.05), size = 1.5) +
+  scale_color_manual(values = c("gray", "red")) +
+  theme_minimal() +
+  ggtitle("Volcano Plot: 0h vs 12h") +
+  xlab("log2 Fold Change") +
+  ylab("-log10 Adjusted p-value") +
+  theme(legend.position = "none")
+```
+
+```{r}
+# Load the mapping file 
+geneID2GO <- readMappings("gene_association_topGO.tsv")
+
+# Create a character vector that contains the names of the all the gene IDs in the mapping file
+geneUniverse <- names(geneID2GO)
+```
+
+```{r}
+# Load each CSV file individually
+top10_0h_vs_12h_upregulated <- read_csv("top10_0h_vs_12h_upregulated.csv")
+top10_0h_vs_24h_upregulated <- read_csv("top10_0h_vs_24h_upregulated.csv")
+top10_0h_vs_36h_upregulated <- read_csv("top10_0h_vs_36h_upregulated.csv")
+top10_0h_vs_48h_upregulated <- read_csv("top10_0h_vs_48h_upregulated.csv")
+
+top10_0h_vs_12h_downregulated <- read_csv("top10_0h_vs_12h_downregulated.csv")
+top10_0h_vs_24h_downregulated <- read_csv("top10_0h_vs_24h_downregulated.csv")
+top10_0h_vs_36h_downregulated <- read_csv("top10_0h_vs_36h_downregulated.csv")
+top10_0h_vs_48h_downregulated <- read_csv("top10_0h_vs_48h_downregulated.csv")
+```
+
+```{r}
+# Filter for statistically significant upregulated and downregulated genes in each dataset
+log_2_fold <- 1
+
+# 0h vs 12h upregulated
+up_genes_0h_vs_12h_upregulated <- res_0h_vs_12h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange >= log_2_fold) %>%
+  rownames_to_column("gene_id")
+down_genes_0h_vs_12h_upregulated <- res_0h_vs_12h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange <= -log_2_fold)%>%
+  rownames_to_column("gene_id")
+
+# 0h vs 24h upregulated
+up_genes_0h_vs_24h_upregulated <- res_0h_vs_24h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange >= log_2_fold)%>%
+  rownames_to_column("gene_id")
+down_genes_0h_vs_24h_upregulated <- res_0h_vs_24h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange <= -log_2_fold)%>%
+  rownames_to_column("gene_id")
+
+# 0h vs 36h upregulated
+up_genes_0h_vs_36h_upregulated <- res_0h_vs_36h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange >= log_2_fold)%>%
+  rownames_to_column("gene_id")
+down_genes_0h_vs_36h_upregulated <- res_0h_vs_36h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange <= -log_2_fold)%>%
+  rownames_to_column("gene_id")
+
+# 0h vs 48h upregulated
+up_genes_0h_vs_48h_upregulated <- res_0h_vs_48h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange >= log_2_fold)%>%
+  rownames_to_column("gene_id")
+down_genes_0h_vs_48h_upregulated <- res_0h_vs_48h_no_NA %>%
+  filter(padj <= 0.05 & log2FoldChange <= -log_2_fold)%>%
+  rownames_to_column("gene_id")
+
+write.csv(up_genes_0h_vs_12h_upregulated, "up_genes_0h_vs_12h.csv", row.names = FALSE)
+write.csv(down_genes_0h_vs_12h_upregulated, "down_genes_0h_vs_12h.csv", row.names = FALSE)
+write.csv(up_genes_0h_vs_12h_upregulated, "up_genes_0h_vs_24h.csv", row.names = FALSE)
+write.csv(down_genes_0h_vs_12h_upregulated, "down_genes_0h_vs_24h.csv", row.names = FALSE)
+write.csv(up_genes_0h_vs_12h_upregulated, "up_genes_0h_vs_36h.csv", row.names = FALSE)
+write.csv(down_genes_0h_vs_12h_upregulated, "down_genes_0h_vs_36h.csv", row.names = FALSE)
+write.csv(up_genes_0h_vs_12h_upregulated, "up_genes_0h_vs_48h.csv", row.names = FALSE)
+write.csv(down_genes_0h_vs_12h_upregulated, "down_genes_0h_vs_48h.csv", row.names = FALSE)
+```
+
+```{r}
+# 0h vs 12h upregulated and downregulated genes
+upregulated_genes_0h_vs_12h <- as.character(up_genes_0h_vs_12h_upregulated$gene_id)
+downregulated_genes_0h_vs_12h <- as.character(down_genes_0h_vs_12h_upregulated$gene_id)
+up_gene_list_0h_vs_12h <- factor(as.integer(geneUniverse %in% upregulated_genes_0h_vs_12h))
+down_gene_list_0h_vs_12h <- factor(as.integer(geneUniverse %in% downregulated_genes_0h_vs_12h))
+
+# 0h vs 24h upregulated and downregulated genes
+upregulated_genes_0h_vs_24h <- as.character(up_genes_0h_vs_24h_upregulated$gene_id)
+downregulated_genes_0h_vs_24h <- as.character(down_genes_0h_vs_24h_upregulated$gene_id)
+up_gene_list_0h_vs_24h <- factor(as.integer(geneUniverse %in% upregulated_genes_0h_vs_24h))
+down_gene_list_0h_vs_24h <- factor(as.integer(geneUniverse %in% downregulated_genes_0h_vs_24h))
+
+# 0h vs 36h upregulated and downregulated genes
+upregulated_genes_0h_vs_36h <- as.character(up_genes_0h_vs_36h_upregulated$gene_id)
+downregulated_genes_0h_vs_36h <- as.character(down_genes_0h_vs_36h_upregulated$gene_id)
+up_gene_list_0h_vs_36h <- factor(as.integer(geneUniverse %in% upregulated_genes_0h_vs_36h))
+down_gene_list_0h_vs_36h <- factor(as.integer(geneUniverse %in% downregulated_genes_0h_vs_36h))
+
+# 0h vs 48h upregulated and downregulated genes
+upregulated_genes_0h_vs_48h <- as.character(up_genes_0h_vs_48h_upregulated$gene_id)
+downregulated_genes_0h_vs_48h <- as.character(down_genes_0h_vs_48h_upregulated$gene_id)
+up_gene_list_0h_vs_48h <- factor(as.integer(geneUniverse %in% upregulated_genes_0h_vs_48h))
+down_gene_list_0h_vs_48h <- factor(as.integer(geneUniverse %in% downregulated_genes_0h_vs_48h))
+
+# Set names for the gene lists
+names(up_gene_list_0h_vs_12h) <- geneUniverse
+names(down_gene_list_0h_vs_12h) <- geneUniverse
+names(up_gene_list_0h_vs_24h) <- geneUniverse
+names(down_gene_list_0h_vs_24h) <- geneUniverse
+names(up_gene_list_0h_vs_36h) <- geneUniverse
+names(down_gene_list_0h_vs_36h) <- geneUniverse
+names(up_gene_list_0h_vs_48h) <- geneUniverse
+names(down_gene_list_0h_vs_48h) <- geneUniverse
+```
+
+```{r}
+# Build the GOdata object in topGO for upregulated and downregulated genes
+up_GO_data_0h_vs_12h <- new("topGOdata", 
+                             description = "sac_0h_vs_12h_upregulated", 
+                             ontology = "BP", 
+                             allGenes = up_gene_list_0h_vs_12h,
+                             annot = annFUN.gene2GO,
+                             gene2GO = geneID2GO,
+                          )
+
+down_GO_data_0h_vs_12h <- new("topGOdata",
+                               description = "sac_0h_vs_12h_downregulated",
+                               ontology = "BP",
+                               allGenes = down_gene_list_0h_vs_12h,
+                               annot = annFUN.gene2GO,
+                               gene2GO = geneID2GO,
+                              )
+
+up_GO_data_0h_vs_24h <- new("topGOdata", 
+                             description = "sac_0h_vs_24h_upregulated", 
+                             ontology = "BP", 
+                             allGenes = up_gene_list_0h_vs_24h,
+                             annot = annFUN.gene2GO,
+                             gene2GO = geneID2GO,
+                            )
+
+down_GO_data_0h_vs_24h <- new("topGOdata",
+                               description = "sac_0h_vs_24h_downregulated",
+                               ontology = "BP",
+                               allGenes = down_gene_list_0h_vs_24h,
+                               annot = annFUN.gene2GO,
+                               gene2GO = geneID2GO,
+                               )
+
+up_GO_data_0h_vs_36h <- new("topGOdata", 
+                             description = "sac_0h_vs_36h_upregulated", 
+                             ontology = "BP", 
+                             allGenes = up_gene_list_0h_vs_36h,
+                             annot = annFUN.gene2GO,
+                             gene2GO = geneID2GO,
+                            )
+
+down_GO_data_0h_vs_36h <- new("topGOdata",
+                               description = "sac_0h_vs_36h_downregulated",
+                               ontology = "BP",
+                               allGenes = down_gene_list_0h_vs_36h,
+                               annot = annFUN.gene2GO,
+                               gene2GO = geneID2GO,
+                              )
+
+up_GO_data_0h_vs_48h <- new("topGOdata", 
+                             description = "sac_0h_vs_48h_upregulated", 
+                             ontology = "BP", 
+                             allGenes = up_gene_list_0h_vs_48h,
+                             annot = annFUN.gene2GO,
+                             gene2GO = geneID2GO,
+                            )
+
+down_GO_data_0h_vs_48h <- new("topGOdata",
+                               description = "sac_0h_vs_48h_downregulated",
+                               ontology = "BP",
+                               allGenes = down_gene_list_0h_vs_48h,
+                               annot = annFUN.gene2GO,
+                               gene2GO = geneID2GO,
+                              )
+```
+
+```{r}
+# Perform stats for upregulated genes (0h vs 12h)
+up_result_0h_vs_12h <- runTest(up_GO_data_0h_vs_12h, 
+                                algorithm = "weight01", 
+                                statistic = "fisher")
+
+# Perform stats for downregulated genes (0h vs 12h)
+down_result_0h_vs_12h <- runTest(down_GO_data_0h_vs_12h, 
+                                  algorithm = "weight01", 
+                                  statistic = "fisher")
+
+# Perform stats for upregulated genes (0h vs 24h)
+up_result_0h_vs_24h <- runTest(up_GO_data_0h_vs_24h, 
+                                algorithm = "weight01", 
+                                statistic = "fisher")
+
+# Perform stats for downregulated genes (0h vs 24h)
+down_result_0h_vs_24h <- runTest(down_GO_data_0h_vs_24h, 
+                                  algorithm = "weight01", 
+                                  statistic = "fisher")
+
+# Perform stats for upregulated genes (0h vs 36h)
+up_result_0h_vs_36h <- runTest(up_GO_data_0h_vs_36h, 
+                                algorithm = "weight01", 
+                                statistic = "fisher")
+
+# Perform stats for downregulated genes (0h vs 36h)
+down_result_0h_vs_36h <- runTest(down_GO_data_0h_vs_36h, 
+                                  algorithm = "weight01", 
+                                  statistic = "fisher")
+
+# Perform stats for upregulated genes (0h vs 48h)
+up_result_0h_vs_48h <- runTest(up_GO_data_0h_vs_48h, 
+                                algorithm = "weight01", 
+                                statistic = "fisher")
+
+# Perform stats for downregulated genes (0h vs 48h)
+down_result_0h_vs_48h <- runTest(down_GO_data_0h_vs_48h, 
+                                  algorithm = "weight01", 
+                                  statistic = "fisher")
+```
+
+```{r}
+# Create a function to extract GO term results and categorize them
+extract_GO_results <- function(go_data, go_result, comparison, type) {
+  go_results <- GenTable(go_data, 
+                         weight01  = go_result, 
+                         orderBy = "weight01", 
+                         topNodes = 10)  # Adjust number of top nodes as needed
+  
+  go_results$type <- type
+  go_results$comparison <- comparison
+  
+  # Extract broad categories
+  go_results$Category <- sub(".*_", "", go_results$Term)
+  
+  return(go_results)
+}
+
+# Extract results for all comparisons (0h vs 12h, 0h vs 24h, etc.)
+up_GO_results_0h_vs_12h <- extract_GO_results(up_GO_data_0h_vs_12h, up_result_0h_vs_12h, "0h_vs_12h", "Upregulated")
+down_GO_results_0h_vs_12h <- extract_GO_results(down_GO_data_0h_vs_12h, down_result_0h_vs_12h, "0h_vs_12h", "Downregulated")
+
+up_GO_results_0h_vs_24h <- extract_GO_results(up_GO_data_0h_vs_24h, up_result_0h_vs_24h, "0h_vs_24h", "Upregulated")
+down_GO_results_0h_vs_24h <- extract_GO_results(down_GO_data_0h_vs_24h, down_result_0h_vs_24h, "0h_vs_24h", "Downregulated")
+
+up_GO_results_0h_vs_36h <- extract_GO_results(up_GO_data_0h_vs_36h, up_result_0h_vs_36h, "0h_vs_36h", "Upregulated")
+down_GO_results_0h_vs_36h <- extract_GO_results(down_GO_data_0h_vs_36h, down_result_0h_vs_36h, "0h_vs_36h", "Downregulated")
+
+up_GO_results_0h_vs_48h <- extract_GO_results(up_GO_data_0h_vs_48h, up_result_0h_vs_48h, "0h_vs_48h", "Upregulated")
+down_GO_results_0h_vs_48h <- extract_GO_results(down_GO_data_0h_vs_48h, down_result_0h_vs_48h, "0h_vs_48h", "Downregulated")
+
+# Add labels to upregulated and downregulated dataframes, including GeneRatio
+up_GO_results_0h_vs_12h_gene_ratio <- up_GO_results_0h_vs_12h %>%
+  mutate(up_down = "Upregulated", GeneRatio = Significant / Annotated)  # Assuming GeneRatio exists
+
+down_GO_results_0h_vs_12h_gene_ratio <- down_GO_results_0h_vs_12h %>%
+  mutate(up_down = "Downregulated", GeneRatio = Significant / Annotated)
+
+up_GO_results_0h_vs_24h_gene_ratio <- up_GO_results_0h_vs_24h %>%
+  mutate(up_down = "Upregulated", GeneRatio = Significant / Annotated)
+
+down_GO_results_0h_vs_24h_gene_ratio <- down_GO_results_0h_vs_24h %>%
+  mutate(up_down = "Downregulated", GeneRatio = Significant / Annotated)
+
+up_GO_results_0h_vs_36h_gene_ratio <- up_GO_results_0h_vs_36h %>%
+  mutate(up_down = "Upregulated", GeneRatio = Significant / Annotated)
+
+down_GO_results_0h_vs_36h_gene_ratio <- down_GO_results_0h_vs_36h %>%
+  mutate(up_down = "Downregulated", GeneRatio = Significant / Annotated)
+
+up_GO_results_0h_vs_48h_gene_ratio <- up_GO_results_0h_vs_48h %>%
+  mutate(up_down = "Upregulated", GeneRatio = Significant / Annotated)
+
+down_GO_results_0h_vs_48h_gene_ratio <- down_GO_results_0h_vs_48h %>%
+  mutate(up_down = "Downregulated", GeneRatio = Significant / Annotated)
+
+# Combine all the GO results into one data frame with GeneRatio in the name
+combined_GO_results_gene_ratio <- bind_rows(
+  up_GO_results_0h_vs_12h_gene_ratio, down_GO_results_0h_vs_12h_gene_ratio,
+  up_GO_results_0h_vs_24h_gene_ratio, down_GO_results_0h_vs_24h_gene_ratio,
+  up_GO_results_0h_vs_36h_gene_ratio, down_GO_results_0h_vs_36h_gene_ratio,
+  up_GO_results_0h_vs_48h_gene_ratio, down_GO_results_0h_vs_48h_gene_ratio
+)
+
+# Here, I was troubleshooting figuring out whether I should separate each timepoint first
+# So I tried to approaches, either combining all of them at once or afterward
+# So I included both approaches
+combined_GO_results_0h_vs_12h_gene_ratio <- bind_rows(up_GO_results_0h_vs_12h_gene_ratio, down_GO_results_0h_vs_12h_gene_ratio) %>%
+  filter(weight01 <= 0.05) %>%
+  mutate(GeneRatio = Significant/Annotated, weight01 = as.numeric(weight01)) %>%
+  arrange(GeneRatio) %>%
+  mutate(Term = factor(Term))
+
+combined_GO_results_0h_vs_24h_gene_ratio <- bind_rows(up_GO_results_0h_vs_24h_gene_ratio, down_GO_results_0h_vs_24h_gene_ratio) %>%
+  filter(weight01 <= 0.05) %>%
+  mutate(GeneRatio = Significant/Annotated, weight01 = as.numeric(weight01)) %>%
+  arrange(GeneRatio) %>%
+  mutate(Term = factor(Term))
+
+combined_GO_results_0h_vs_36h_gene_ratio <- bind_rows(up_GO_results_0h_vs_36h_gene_ratio, down_GO_results_0h_vs_36h_gene_ratio) %>%
+  filter(weight01 <= 0.05) %>%
+  mutate(GeneRatio = Significant/Annotated, weight01 = as.numeric(weight01)) %>%
+  arrange(GeneRatio) %>%
+  mutate(Term = factor(Term))
+
+combined_GO_results_0h_vs_48h_gene_ratio <- bind_rows(up_GO_results_0h_vs_48h_gene_ratio, down_GO_results_0h_vs_48h_gene_ratio) %>%
+  filter(weight01 <= 0.05) %>%
+  mutate(GeneRatio = Significant/Annotated, weight01 = as.numeric(weight01)) %>%
+  arrange(GeneRatio) %>%
+  mutate(Term = factor(Term))
+
+# Here I am assigning a cleaner title so it looks nicer on the dot plot
+combined_GO_results_0h_vs_12h_gene_ratio <- combined_GO_results_0h_vs_12h_gene_ratio %>%
+  mutate(comparison = "0h vs. 12h")
+
+combined_GO_results_0h_vs_24h_gene_ratio <- combined_GO_results_0h_vs_24h_gene_ratio %>%
+  mutate(comparison = "0h vs. 24h")
+
+combined_GO_results_0h_vs_36h_gene_ratio <- combined_GO_results_0h_vs_36h_gene_ratio %>%
+  mutate(comparison = "0h vs. 36h")
+
+combined_GO_results_0h_vs_48h_gene_ratio <- combined_GO_results_0h_vs_48h_gene_ratio %>%
+  mutate(comparison = "0h vs. 48h")
+
+# Here I'm combining each timepoint together
+combined_GO_results_gene_ratio_arranged <- bind_rows(combined_GO_results_0h_vs_12h_gene_ratio, combined_GO_results_0h_vs_24h_gene_ratio, combined_GO_results_0h_vs_36h_gene_ratio, combined_GO_results_0h_vs_48h_gene_ratio) %>%
+  filter(weight01 <= 0.05) %>%
+  mutate(GeneRatio = Significant/Annotated, weight01 = as.numeric(weight01)) %>%
+  arrange(GeneRatio) %>%
+  mutate(Term = factor(Term))
+
+# This was one plot I made to compare 0h vs 12h and 0h vs 24h because there was some formatting issues
+# with the dot plot being made where there would be additional empty spaces in the GO term area
+# due to multiple timepoints sharing the same GO
+combined_GO_results_0h_vs_12h_vs_24_ratio_arranged<- bind_rows(combined_GO_results_0h_vs_12h_gene_ratio, combined_GO_results_0h_vs_24h_gene_ratio) %>%
+  filter(weight01 <= 0.05) %>%
+  mutate(GeneRatio = Significant/Annotated, weight01 = as.numeric(weight01)) %>%
+  arrange(GeneRatio) %>%
+  mutate(Term = factor(Term))
+         
+# Save the combined data frame into a CSV file
+write.csv(combined_GO_results_gene_ratio, "combined_GO_results_gene_ratio.csv", row.names = FALSE)
+
+# Filter by Enrichment Ratio (GeneRatio) to include only relevant GO terms
+filtered_GO_results_gene_ratio1 <- combined_GO_results_gene_ratio %>%
+  filter(GeneRatio >= 0.05)  # Adjust threshold as needed (e.g., 0.05 for significant enrichment)
+
+# Arrange by GeneRatio within each comparison and up/down group
+
+#filtered_GO_results_gene_ratio <- filtered_GO_results_gene_ratio1 %>%
+#  arrange(GeneRatio) %>%
+#  mutate(Term = factor(Term))
+
+order_term_0_12 <- combined_GO_results_0h_vs_12h_gene_ratio %>%
+  pull(Term)
+
+order_term <- combined_GO_results_gene_ratio_arranged %>%
+  pull(Term) %>%
+  unique()
+
+order_term_0_12_24 <- combined_GO_results_0h_vs_12h_vs_24_ratio_arranged %>%
+  pull(Term) %>%
+  unique()
+
+# Summarize by broad GO categories and comparison type
+category_counts_gene_ratio <- filtered_GO_results_gene_ratio %>%
+  group_by(comparison, up_down, Category) %>%
+  summarise(count = n(), .groups = 'drop')
+
+# Convert counts into proportions
+category_counts_gene_ratio <- category_counts_gene_ratio %>%
+  group_by(comparison, up_down) %>%
+  mutate(proportion = count / sum(count))
+```
+
+```{r}
+head(order_term, n=40)
+```
+
+```{r}
+# Plot a stacked proportional bar chart
+ggplot(category_counts_gene_ratio, aes(x = interaction(comparison, up_down), y = proportion, fill = Category)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Comparison (Upregulated/Downregulated)", y = "Proportion", title = "GO Term Enrichment Across Comparisons (GeneRatio)") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+```
+
+```{r}
+# Create a plot with faceting
+
+combined_plot <- ggplot(combined_GO_results_gene_ratio_arranged, aes(x = Category, y = GeneRatio, color = up_down)) +
+  geom_point(aes(size = Significant)) +  # Points size based on GeneRatio
+  scale_color_manual(values = c("Upregulated" = "blue", "Downregulated" = "red")) +
+  facet_wrap(~ comparison, scales = "free_x", ncol = 4) +  # Facet by comparison, 4 columns
+  labs(x = "GO Term Description", y = "Enrichment Ratio", title = "Change in Gene Regulation", color = "Regulation",
+       size = "Number of Significant Genes") +
+  theme_minimal() +
+  coord_flip() +
+  geom_col(width = 0.05) +
+  scale_x_discrete(limits = order_term) + 
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.5), expand = c(0, 0)) +
+  theme(
+        panel.grid = element_line(colour = "grey96"), 
+        strip.background = element_rect(colour = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1, size = 5),  # Reduce font size of x-axis labels
+        strip.text = element_text(size = 15),
+        aspect.ratio = 5)  # Ensure the plot is closed properly here
+
+combined_plot
+ggsave("combined_plot2.png", plot = combined_plot, width = 10, height = 8, dpi = 1200)  # Adjust width, height, and dpi as needed
+```
+```{r}
+# Create a plot with faceting
+
+combined_plot <- ggplot(combined_GO_results_0h_vs_12h_vs_24_ratio_arranged, aes(x = Category, y = GeneRatio, color = up_down)) +
+  geom_point(aes(size = Significant)) +  # Points size based on GeneRatio
+  scale_color_manual(values = c("Upregulated" = "blue", "Downregulated" = "red")) +
+  facet_wrap(~ comparison, scales = "free_x", ncol = 2) +  # Facet by comparison, 4 columns
+  labs(x = "GO Term Description", y = "Enrichment Ratio", title = "Change in Gene Regulation", color = "Regulation",
+       size = "Number of Significant Genes") +
+  theme_minimal() +
+  coord_flip() +
+  geom_col(width = 0.05) +
+  scale_x_discrete(limits = order_term_0_12_24) + 
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.5), expand = c(0, 0)) +
+  theme(
+        panel.grid = element_line(colour = "grey96"), 
+        strip.background = element_rect(colour = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1, size = 5),  # Reduce font size of x-axis labels
+        strip.text = element_text(size = 15),
+        aspect.ratio = 5)  # Ensure the plot is closed properly here
+
+combined_plot
+#ggsave("combined_plot2.png", plot = combined_plot, width = 10, height = 8, dpi = 800)  # Adjust width, height, and dpi as needed
+```
+
+```{r}
+# Filter the data for the 0h vs 12h comparison
+filtered_GO_results_gene_ratio_0h_vs_12h <- filtered_GO_results_gene_ratio %>%
+  filter(comparison == "0h_vs_12h")
+
+# Create the plot for the 0h vs 12h comparison
+plot_0_12 <-
+  ggplot(combined_GO_results_0h_vs_12h_gene_ratio, aes(x = Category, y = GeneRatio, color = up_down)) +
+  geom_point(aes(size = Significant)) +  # Points size based on Significant genes
+  scale_color_manual(values = c("Upregulated" = "blue", "Downregulated" = "red")) +  # Color scale for up/down
+  labs(x = "GO Term Description", y = "Enrichment Ratio", title = "0h vs 12h Comparison", color = "Regulation", size = "Number of Significant Genes") +
+  theme_minimal() +
+  coord_flip() +
+  scale_x_discrete(limits = order_term_0_12) + 
+  geom_col(width = 0.05) +
+  theme(
+        panel.grid = element_line(colour = "grey96"), 
+        strip.background = element_rect(colour = "black"),
+        axis.text.x = element_text(angle = 90, hjust = 1, size = 6),  # Adjust font size of x-axis labels
+        strip.text = element_text(size = 5)
+  )
+
+plot_0_12
+#ggsave("0_12_plot.png", plot = plot_0_12, width = 10, height = 8, dpi = 800)  # Adjust width, height, and dpi as needed
+```
+
+```{r}
+GO_term_id <- "GO:0061621" # Type in desired GO term
+genes_in_GO_term_id <- genesInTerm(combined_GO_results_gene_ratio_arranged, GO_term_id)
+
+gene_names <- genes_in_GO_term_id[[GO_term_id]]
+print(gene_names)
+```
+
+
