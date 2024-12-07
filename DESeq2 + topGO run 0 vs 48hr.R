@@ -178,21 +178,6 @@ geneUniverse <- names(geneID2GO)
 upregulated_gene_names <- as.character(up_gene$gene_id)
 downregulated_gene_names <- as.character(down_gene$gene_id)
 
-# Create a factor for upregulated genes
-#up_gene_list <- factor(as.integer(geneUniverse %in% upregulated_gene_names), 
-#                       levels = c(0, 1),  # Ensure two levels: 0 = not upregulated, 1 = upregulated
-#                       labels = c("Not Upregulated", "Upregulated"))
-#names(up_gene_list) <- geneUniverse
-
-# Create a factor for downregulated genes
-#down_gene_list <- factor(as.integer(geneUniverse %in% downregulated_gene_names),
-#                         levels = c(0, 1),  # Ensure two levels: 0 = not downregulated, 1 = downregulated
-#                         labels = c("Not Downregulated", "Downregulated"))
-#names(down_gene_list) <- geneUniverse
-
-#levels(up_gene_list)  # Should return: "Not Upregulated" and "Upregulated"
-#levels(down_gene_list)  # Should return: "Not Downregulated" and "Downregulated"
-
 # Factor the names
 up_gene_list <- factor(as.integer(geneUniverse %in% upregulated_gene_names))
 down_gene_list <- factor(as.integer(geneUniverse %in% downregulated_gene_names))
