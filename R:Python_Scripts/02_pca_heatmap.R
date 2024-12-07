@@ -49,7 +49,7 @@ rownames(dds_filtered) <- gsub("SPOM_", "", rownames(dds_filtered))
 rld_1 <- rlog(dds_filtered)
 rld_mat <- assay(rld_1)
 
-# Selecting top 20 most variable genes
+# Selecting top 20 most variable genes (can be altered to generate top 500)
 select <- head(order(rowVars(rld_mat), decreasing = TRUE), 20)
 selected_genes <- assay(rld_1[select,])
 selected_genes_names <- rownames(selected_genes)
