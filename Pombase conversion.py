@@ -8,14 +8,13 @@ spombe_topGOIDs = 'C:/Users/brenn/Downloads/gene_association.pombase'
 with open(spombe_topGOIDs, 'r') as file:
     data_preview = file.readlines()
 
-# Lets quickly check the first few lines of the file
+# Check the first 10 rows to make sure it's what we are expecting
 data_preview[:10]
 
-# Now we can convert the GAF file to a topGO readable file
-
+# Here we are converting the GAF file to a topGO file
 from collections import defaultdict
 
-# Lets create a dictionary to preserve the gene to GO term mapping relationship
+# Create a dictionary to preserve the gene to GO term mapping relationship
 gene_to_go = defaultdict(list)
 
 # Process each line in the file
@@ -41,7 +40,7 @@ for gene, go_terms in gene_to_go.items():
     go_terms_str = ",".join(set(go_terms))  # Use set to remove duplicates
     topgo_lines.append(f"{gene}\t{go_terms_str}")
 
-# Save the processed data to our MICB405 project folder
+# Save the processed data to the MICB405 project folder
 output_path = 'C:/Users/brenn/MICB405/finalproject/gene_association_topGO.tsv'
 with open(output_path, 'w') as output_file:
     output_file.write("\n".join(topgo_lines))
